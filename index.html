@@ -3,77 +3,71 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FB Post Downloader</title>
+<title>FB Media Link Viewer</title>
 <style>
   body { font-family: Arial; text-align:center; padding:30px; background:#f5f5f5; }
   input { width:80%; padding:10px; margin:10px 0; border-radius:8px; border:1px solid #ccc; }
   button { padding:10px 20px; border-radius:8px; border:none; background:#1877f2; color:#fff; cursor:pointer; }
-  pre { text-align:left; background:#eee; padding:15px; border-radius:8px; overflow-x:auto; max-height:300px; }
+  pre { text-align:left; background:#eee; padding:15px; border-radius:8px; overflow-x:auto; max-height:400px; }
   a { display:block; margin:5px 0; color:green; }
 </style>
 </head>
 <body>
-<h2>Facebook Post Downloader</h2>
+<h2>Facebook Post Media Links Viewer</h2>
+<p>Public posts only. Enter post/page URL:</p>
 <input type="text" id="fbUrl" placeholder="Enter Facebook Post or Page URL">
-<button onclick="downloadFB()">Download</button>
+<button onclick="scrapeFB()">View Links</button>
 
 <div id="result"></div>
 
 <script>
-async function downloadFB() {
+async function scrapeFB() {
     const url = document.getElementById("fbUrl").value.trim();
     const resultDiv = document.getElementById("result");
-    if (!url) { alert("Enter a URL"); return; }
+    if(!url){ alert("Enter a URL"); return; }
 
-    resultDiv.innerHTML = "<p>⏳ Starting Actor... please wait</p>";
+    resultDiv.innerHTML = "<p>⏳ Loading post in iframe...</p>";
 
-    const API_TOKEN = "apify_api_EhgX7HS6tn909T1D6SC2mvLbHZzXLV0UD2ac";
-    const payload = { startUrls:[{url}], resultsLimit:5, captionText:false };
+    // Create hidden iframe
+    const iframe = document.createElement("iframe");
+    iframe.src = url;
+    iframe.style.width = "1px";
+    iframe.style.height = "1px";
+    iframe.style.visibility = "hidden";
+    document.body.appendChild(iframe);
 
-    try {
-        // 1️⃣ Start Actor run
-        const runRes = await fetch(`https://api.apify.com/v2/acts/KoJrdxJCTtpon81KY~default/runs?token=${API_TOKEN}`, {
-            method:"POST",
-            headers:{"Content-Type":"application/json"},
-            body:JSON.stringify(payload)
-        });
-        const runData = await runRes.json();
-        const runId = runData.data.id;
+    iframe.onload = () => {
+        try {
+            const imgs = iframe.contentDocument.getElementsByTagName("img");
+            const videos = iframe.contentDocument.getElementsByTagName("video");
 
-        resultDiv.innerHTML = "<p>⏳ Actor running... checking status</p>";
+            let html = "<h3>Media Links Found:</h3>";
 
-        // 2️⃣ Polling until Actor is SUCCEEDED
-        let status = "";
-        while(status !== "SUCCEEDED") {
-            const statusRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${API_TOKEN}`);
-            const statusData = await statusRes.json();
-            status = statusData.data.status;
-            console.log("Status:", status);
-            if(status === "FAILED") { resultDiv.innerHTML="<p>❌ Actor Failed</p>"; return; }
-            await new Promise(r => setTimeout(r, 5000)); // 5 sec wait
+            if(imgs.length>0){
+                for(let i=0;i<imgs.length;i++){
+                    let src = imgs[i].src;
+                    if(src) html += `<a href="${src}" target="_blank">📷 Image ${i+1}</a>`;
+                }
+            }
+
+            if(videos.length>0){
+                for(let i=0;i<videos.length;i++){
+                    let src = videos[i].src;
+                    if(src) html += `<a href="${src}" target="_blank">🎥 Video ${i+1}</a>`;
+                }
+            }
+
+            if(html === "<h3>Media Links Found:</h3>"){
+                html += "<p>❌ No media found or post is private.</p>";
+            }
+
+            resultDiv.innerHTML = html;
+            document.body.removeChild(iframe);
+
+        } catch(e){
+            resultDiv.innerHTML = "<p>❌ Cannot access media. Post might be private or blocked by CORS.</p>";
+            document.body.removeChild(iframe);
         }
-
-        // 3️⃣ Fetch dataset
-        const datasetId = runData.data.defaultDatasetId || runData.data.defaultDatasetId; 
-        if(!datasetId) { resultDiv.innerHTML="<p>❌ No dataset found</p>"; return; }
-
-        const datasetRes = await fetch(`https://api.apify.com/v2/datasets/${datasetId}/items?token=${API_TOKEN}&format=json`);
-        const items = await datasetRes.json();
-
-        if(items.length===0){ resultDiv.innerHTML="<p>❌ No posts found</p>"; return; }
-
-        // 4️⃣ Show results
-        let html = "<h3>✅ Results:</h3>";
-        items.forEach((post,i)=>{
-            html += `<h4>Post ${i+1}</h4>`;
-            if(post.image) html += `<a href="${post.image}" target="_blank">📷 Image Link</a>`;
-            if(post.video) html += `<a href="${post.video}" target="_blank">🎥 Video Link</a>`;
-            if(post.text) html += `<pre>${post.text}</pre>`;
-        });
-        resultDiv.innerHTML = html;
-
-    } catch(err) {
-        resultDiv.innerHTML = "<p>❌ Error: "+err.message+"</p>";
     }
 }
 </script>
